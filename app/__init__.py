@@ -7,7 +7,6 @@ app = Flask(__name__)
 app.config.from_envvar('ENV_DIRECTORY')
 jwt = JWTManager(app)
 
-print(app.config['SQLALCHEMY_DATABASE_URI'])
 db = SQLAlchemy(app)
 db.Model.metadata.reflect(bind=db.engine)
 

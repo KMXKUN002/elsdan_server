@@ -1,11 +1,10 @@
-# XML reader
+import json
+import os
 import xml.etree.ElementTree as ET
 
-# Requests 
 import requests
 from authlib.integrations.flask_client import OAuth
-# Flask 
-from flask import abort, jsonify
+from flask import abort, jsonify, url_for, request
 from flask_httpauth import HTTPBasicAuth
 # Flask JSON Web Token manager
 from flask_jwt_extended import (create_access_token, create_refresh_token,
@@ -21,7 +20,7 @@ from app.resources import (DatatypeResource, DeviceResource,
 
 auth = HTTPBasicAuth()
 api = Api(app)
-oauth = OAuth(app, fetch_token=fetch_token, update_token=update_token)
+app.secret_key = os.urandom(24)
 
 api.add_resource(DatatypeResource, '/api/datatype')
 api.add_resource(DeviceResource, '/api/device')
@@ -79,9 +78,13 @@ def verify_password(username, password):
 
     # Read XML response from Nextcloud.
     # tree_root[0][0] finds the tag <status>
+    # tree_root[1][0] finds <enabled>, whether the client is enabled
+    # tree_root[1][2] finds <id>, the user ID recorded on the Nextcloud system
     # See more at https://docs.nextcloud.com/server/14/developer_manual/client_apis/OCS/index.html
     tree_root = ET.fromstring(response.content)
-    if tree_root[0][0].text == 'ok':
+    if (tree_root[0][0].text == 'ok'
+        and tree_root[1][0].text == '1'
+        and tree_root[1][2].text == username):
         return username
     else:
         abort(401)

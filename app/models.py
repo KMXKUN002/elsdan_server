@@ -92,6 +92,7 @@ class Sensor(db.Model):
 
 tag_map = db.Table('oc_systemtag_object_mapping', db.Model.metadata,
     db.Column('objectid', db.Integer, db.ForeignKey('oc_filecache.fileid'), primary_key=True),
+    db.Column('objecttype', db.String, default='files', primary_key=True),
     db.Column('systemtagid', db.Integer, db.ForeignKey('oc_systemtag.id'), primary_key=True),
     extend_existing=True
 )
@@ -105,6 +106,7 @@ class File(db.Model):
     path = Column('path', String)
     file_name = Column('name', String)
     mimetype = Column('mimetype', String)
+    etag = Column('etag', String)
 
     tags = relationship(
         'Tag',

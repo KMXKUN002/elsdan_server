@@ -2,7 +2,7 @@ from datetime import date, datetime
 from json import dumps
 
 import requests
-from flask import request
+from flask import request, abort
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from flask_restful import Resource
 from requests.models import HTTPBasicAuth
@@ -15,15 +15,6 @@ from webargs.flaskparser import use_args
 from app import app, db
 from app.models import (Datatype, Device, File, OAuth2Token, Sensor,
                         SensorFile, Tag)
-
-# Given column names (a, b, ...), and list of SQL output rows,
-# returns list of key-value dictionaries for each row.
-# def rows_to_dict(rows, column_names):
-#     body = []
-#     for row in rows:
-#         value = dict(zip(column_names, row))
-#         body.append(value)
-#     return body
 
 resp_msg = {
     'INSERT': "{} added successfully",
@@ -47,6 +38,12 @@ def get_sensor_permission(sensor_id):
     if uid != get_jwt_identity():
         return False
     return True
+
+
+def get_extension(filename):
+    if '.' not in filename:
+        abort(400)
+    return filename.rsplit('.', 1)[1].lower()
 
 
 def file_namer(sensor_id, extension):
@@ -338,21 +335,17 @@ class SensorResource(Resource):
         if 'datatype_name' in get_args:
             statement = statement.filter(
                 Datatype.datatype_name.contains(
-                    get_args.pop('datatype_name')
-                )
+                    get_args.pop('datatype_name'))
             )
         if 'is_large' in get_args:
             statement = statement.filter(
-                Datatype.is_large == get_args.pop('is_large')
-            )
+                Datatype.is_large == get_args.pop('is_large'))
         if 'uid' in get_args:
             statement = statement.filter(
-                Device.uid == get_args.pop('uid')
-            )
+                Device.uid == get_args.pop('uid'))
         if 'device_name' in get_args:
             statement = statement.filter(
-                Device.device_name.contains(get_args.pop('device_name'))
-            )
+                Device.device_name.contains(get_args.pop('device_name')))
         
         # Filter by each parameter given in args
         # Equivalent to WHERE ... AND clauses
@@ -363,8 +356,7 @@ class SensorResource(Resource):
                 )
             else:
                 statement = statement.filter(
-                    getattr(Sensor, column_name) == get_args[column_name]
-                )
+                    getattr(Sensor, column_name) == get_args[column_name])
 
         rows = db.session.execute(statement).all()
 
@@ -508,7 +500,8 @@ class FileDetailResource(Resource):
             Sensor.sensor_id,
             Sensor.sensor_name,
             SensorFile.upload_date
-        ).select_from(File).join(SensorFile).join(Sensor).filter(File.path.startswith('files/')).filter(File.mimetype > 2)
+        ).select_from(File).join(SensorFile).join(Sensor)\
+            .filter(File.path.startswith('files/')).filter(File.mimetype > 2)
         
         if 'tag_id' in get_args or 'tag_name' in get_args:
             statement = statement.join(File.tags)
@@ -527,9 +520,9 @@ class FileDetailResource(Resource):
                 SensorFile.upload_date > get_args['start_date'])
         if 'end_date' in get_args:
             statement = statement.filter(
-                SensorFile.upload_date > get_args['end_date'])
+                SensorFile.upload_date < get_args['end_date'])
         
-        rows = db.session.execute(statement)
+        rows = db.session.execute(statement).all()
 
         if not rows:
             return {"msg": resp_msg['NO_ITEM']}, 404
@@ -604,7 +597,6 @@ class FileDetailResource(Resource):
             return {"msg": resp_msg['NO_PERMISSION']}, 403
 
         tag = Tag.query.filter_by(tag_id=del_args['tag_id']).first()
-        print(tag)
         if tag not in file.tags:
             return {"msg": "File not tagged with that ID"}, 404
         file.tags.remove(tag)
@@ -676,27 +668,35 @@ class TagResource(Resource):
     
 
 class FileManageResource(Resource):
-    upload_headers = {
+    put_args = {
         'sensor_id': fields.Int(required=True),
         'path': fields.Str(required=True),
-        'extension': fields.Str(required=True),
-        'tag_id': fields.Int()
+        'tag_id': fields.Int(),
+        'user': fields.Str(required=True),
+        'password': fields.Str(required=True)
     }
 
-    @use_args(upload_headers, location='headers')
+    @use_args(put_args, location='form')
     @jwt_required()
-    def put(self, upload_headers):
+    def put(self, put_args):
         uid = get_jwt_identity()
-        sensor_id = upload_headers['sensor_id']
-        path = upload_headers['path']
-        extension = upload_headers['extension']
+        user = put_args['user']
+        password = put_args['password']
+
+        sensor_id = put_args['sensor_id']
+        path = put_args['path']
+
+        if 'file' not in request.files:
+            return {"msg": "No file part"}, 400
 
         if not Sensor.query.filter_by(sensor_id=sensor_id).first():
             return {"msg": resp_msg['NO_ITEM']}, 404
 
-        if not get_sensor_permission(sensor_id):
+        if uid != user or not get_sensor_permission(sensor_id):
             return {"msg": resp_msg['NO_PERMISSION']}, 403
         
+        file = request.files['file']
+        extension = get_extension(file.filename)
         if extension not in app.config['ALLOWED_EXTENSIONS']:
             return {"msg": "This extension is not allowed"}, 400
 
@@ -704,38 +704,35 @@ class FileManageResource(Resource):
         endpoint = "{}{}{}".format(
             app.config['NEXTCLOUD_WEBDAV'],
             append_slash(uid),
-            path
-        )
-        # print(endpoint)
+            path)
 
-        auth = HTTPBasicAuth('chriskim036', 'Prelate52')
-        # access_token = "k5oy364PRfNf2r2LiuUhj0Rzz69WdIBDycwopMtZetPAkgxfzZIlAuVLqXuZWMnrkmgYFpcG"
-        # auth = {"Authorization": "Bearer {}".format(access_token)}
+        auth = HTTPBasicAuth(user, password)
         response = requests.put(
             endpoint,
             auth=auth,
-            data=request.stream
+            data=file,
         )
         response.raise_for_status()
 
-        # file = File.query.filter_by(path="files/{}".format(path)).first()
-        # print(file)
-        # db.session.add(SensorFile(file_id=file.file_id, sensor_id=sensor_id))
+        etag = response.headers.get('ETag').strip('"')
+        print(etag)
+        file = File.query.filter_by(etag=etag).first()
+        db.session.add(SensorFile(file_id=file.file_id, sensor_id=sensor_id))
         
-        # if 'tag_id' in upload_headers:
-        #     tag = Tag.query.filter_by(tag_id=upload_headers['tag_id']).first()
-        #     if not tag:
-        #         return {"msg": "No tag of that ID"}, 404
-        #     file.tags.append(tag)
-        #     db.session.add(file)
+        if 'tag_id' in put_args:
+            tag = Tag.query.filter_by(tag_id=put_args['tag_id']).first()
+            if not tag:
+                return {"msg": "No tag of that ID"}, 404
+            file.tags.append(tag)
+            db.session.add(file)
         
-        # try:
-        #     db.session.commit()
-        # except SQLAlchemyError as e:
-        #     db.session.rollback()
-        #     return {
-        #         "msg": str(e.__dict__['orig'])
-        #     }, 500
+        try:
+            db.session.commit()
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            return {
+                "msg": str(e.__dict__['orig'])
+            }, 500
 
         return {
             "msg": "File uploaded successfully"

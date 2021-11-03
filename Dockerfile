@@ -18,10 +18,10 @@ ENV NEXTCLOUD_AUTH_URL='https://nextcloud.elsdan.com/apps/oauth2/authorize'
 ENV NEXTCLOUD_TOKEN_URL='https://nextcloud.elsdan.com/apps/oauth2/api/v1/token'
 ENV ENV_DIRECTORY='.env'
 
-ENV MYSQL_USER=${MYSQL_USER}
-ENV MYSQL_PASSWORD=${MYSQL_PASSWORD}
-ENV MYSQL_DATABASE=${MYSQL_DATABASE}
-ENV DB_HOST=${DB_HOST}
+ENV MYSQL_USER='chriskim036'
+ENV MYSQL_PASSWORD='Prelate52'
+ENV MYSQL_DATABASE='nextcloud'
+ENV DB_HOST='db'
 
 # Install pip requirements
 COPY requirements.txt .
