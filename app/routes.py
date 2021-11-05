@@ -1,10 +1,10 @@
-import json
 import os
+import time
 import xml.etree.ElementTree as ET
+from datetime import timedelta
 
 import requests
-from authlib.integrations.flask_client import OAuth
-from flask import abort, jsonify, url_for, request
+from flask import abort, jsonify
 from flask_httpauth import HTTPBasicAuth
 # Flask JSON Web Token manager
 from flask_jwt_extended import (create_access_token, create_refresh_token,
@@ -15,8 +15,7 @@ from requests.auth import HTTPBasicAuth as RequestsAuth
 from app import app
 from app.resources import (DatatypeResource, DeviceResource,
                            FileDetailResource, FileManageResource,
-                           SensorResource, TagResource, fetch_token,
-                           update_token)
+                           SensorResource, TagResource)
 
 auth = HTTPBasicAuth()
 api = Api(app)
@@ -46,7 +45,9 @@ def login():
     return {
         'username': username,
         'access_token': access_token,
-        'refresh_token': refresh_token
+        'refresh_token': refresh_token,
+        'expires_at': time.time() + app.config['JWT_ACCESS_TOKEN_EXPIRES']\
+            .total_seconds()
     }
 
 
@@ -57,7 +58,9 @@ def refresh():
     access_token = create_access_token(identity=username)
     return {
         'username': username,
-        'access_token': access_token
+        'access_token': access_token,
+        'expires_at': time.time() + app.config['JWT_ACCESS_TOKEN_EXPIRES']\
+            .total_seconds()
     }
 
 

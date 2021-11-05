@@ -1,8 +1,9 @@
 from datetime import date, datetime
+import time
 from json import dumps
 
 import requests
-from flask import request, abort
+from flask import request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from flask_restful import Resource
 from requests.models import HTTPBasicAuth
@@ -13,7 +14,7 @@ from webargs import fields
 from webargs.flaskparser import use_args
 
 from app import app, db
-from app.models import (Datatype, Device, File, OAuth2Token, Sensor,
+from app.models import (Datatype, Device, File, Sensor,
                         SensorFile, Tag)
 
 resp_msg = {
@@ -40,12 +41,6 @@ def get_sensor_permission(sensor_id):
     return True
 
 
-def get_extension(filename):
-    if '.' not in filename:
-        abort(400)
-    return filename.rsplit('.', 1)[1].lower()
-
-
 def file_namer(sensor_id, extension):
     now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     return "{}_sensor_{}.{}".format(now, sensor_id, extension)
@@ -57,30 +52,30 @@ def append_slash(dir):
     return dir + '/'
 
 
-def fetch_token(name):
-    uid = get_jwt_identity()
-    item = OAuth2Token.query.filter_by(
-        uid=uid
-    ).first()
-    if item:
-        return item.to_dict()
+# def fetch_token(name):
+#     uid = get_jwt_identity()
+#     item = OAuth2Token.query.filter_by(
+#         uid=uid
+#     ).first()
+#     if item:
+#         return item.to_dict()
 
 
-def update_token(name, token):
-    uid = get_jwt_identity()
-    item = OAuth2Token.query.filter_by(
-        uid=uid
-    ).first()
-    if not item:
-        item = OAuth2Token(uid=uid)
-    item.token_type = token.get('token_type', 'bearer')
-    item.access_token = token.get('access_token')
-    item.refresh_token = token.get('refresh_token')
-    item.expires_at = token.get('expires_at')
+# def update_token(name, token):
+#     uid = get_jwt_identity()
+#     item = OAuth2Token.query.filter_by(
+#         uid=uid
+#     ).first()
+#     if not item:
+#         item = OAuth2Token(uid=uid)
+#     item.token_type = token.get('token_type', 'bearer')
+#     item.access_token = token.get('access_token')
+#     item.refresh_token = token.get('refresh_token')
+#     item.expires_at = token.get('expires_at')
 
-    db.session.add(item)
-    db.session.commit()
-    return item
+#     db.session.add(item)
+#     db.session.commit()
+#     return item
 
 
 class DatatypeResource(Resource):
@@ -672,22 +667,25 @@ class FileManageResource(Resource):
         'sensor_id': fields.Int(required=True),
         'path': fields.Str(required=True),
         'tag_id': fields.Int(),
+        'extension': fields.Str(required=True),
         'user': fields.Str(required=True),
         'password': fields.Str(required=True)
     }
 
-    @use_args(put_args, location='form')
+    @use_args(put_args, location='headers')
     @jwt_required()
     def put(self, put_args):
+        print("API receive time {}".format(round(time.time() * 1000)))
         uid = get_jwt_identity()
         user = put_args['user']
         password = put_args['password']
 
         sensor_id = put_args['sensor_id']
         path = put_args['path']
+        extension = put_args['extension']
 
-        if 'file' not in request.files:
-            return {"msg": "No file part"}, 400
+        if request.content_length == 0:
+            return {"msg": "No file content"}
 
         if not Sensor.query.filter_by(sensor_id=sensor_id).first():
             return {"msg": resp_msg['NO_ITEM']}, 404
@@ -695,8 +693,6 @@ class FileManageResource(Resource):
         if uid != user or not get_sensor_permission(sensor_id):
             return {"msg": resp_msg['NO_PERMISSION']}, 403
         
-        file = request.files['file']
-        extension = get_extension(file.filename)
         if extension not in app.config['ALLOWED_EXTENSIONS']:
             return {"msg": "This extension is not allowed"}, 400
 
@@ -710,12 +706,11 @@ class FileManageResource(Resource):
         response = requests.put(
             endpoint,
             auth=auth,
-            data=file,
+            data=request.data,
         )
         response.raise_for_status()
 
         etag = response.headers.get('ETag').strip('"')
-        print(etag)
         file = File.query.filter_by(etag=etag).first()
         db.session.add(SensorFile(file_id=file.file_id, sensor_id=sensor_id))
         
@@ -734,6 +729,7 @@ class FileManageResource(Resource):
                 "msg": str(e.__dict__['orig'])
             }, 500
 
+        print("API respond time {}".format(round(time.time() * 1000)))
         return {
             "msg": "File uploaded successfully"
         }, response.status_code

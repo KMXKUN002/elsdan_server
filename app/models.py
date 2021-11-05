@@ -15,24 +15,24 @@ class User(db.Model):
         return "<User {}>".format(self.uid)
 
 
-class OAuth2Token(db.Model):
-    __tablename__ = 'oauth2tokens'
-    __table_args__ = {'extend_existing': True}
+# class OAuth2Token(db.Model):
+#     __tablename__ = 'oauth2tokens'
+#     __table_args__ = {'extend_existing': True}
 
-    uid = Column('uid', ForeignKey('oc_users.uid'), primary_key=True)
-    token_type = Column('token_type', String)
-    access_token = Column('access_token', String)
-    refresh_token = Column('refresh_token', String)
-    expires_at = Column('expires_at', Integer)
+#     uid = Column('uid', ForeignKey('oc_users.uid'), primary_key=True)
+#     token_type = Column('token_type', String)
+#     access_token = Column('access_token', String)
+#     refresh_token = Column('refresh_token', String)
+#     expires_at = Column('expires_at', Integer)
 
-    def to_dict(self):
-        return dict(
-            uid=self.uid,
-            token_type=self.token_type,
-            access_token=self.access_token,
-            refresh_token=self.refresh_token,
-            expires_at=self.expires_at
-        )
+#     def to_dict(self):
+#         return dict(
+#             uid=self.uid,
+#             token_type=self.token_type,
+#             access_token=self.access_token,
+#             refresh_token=self.refresh_token,
+#             expires_at=self.expires_at
+#         )
 
 
 class Datatype(db.Model):
