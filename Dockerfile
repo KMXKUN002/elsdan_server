@@ -13,13 +13,11 @@ ENV PYTHONDONTWRITEBYTECODE=1
 # Turns off buffering for easier container logging
 ENV PYTHONUNBUFFERED=1
 
-# Nextcloud authentication + token
-ENV NEXTCLOUD_AUTH_URL='https://nextcloud.elsdan.com/apps/oauth2/authorize'
-ENV NEXTCLOUD_TOKEN_URL='https://nextcloud.elsdan.com/apps/oauth2/api/v1/token'
+# Environment variables
 ENV ENV_DIRECTORY='.env'
 
-ENV MYSQL_USER='chriskim036'
-ENV MYSQL_PASSWORD='Prelate52'
+ENV MYSQL_USER=your_user
+ENV MYSQL_PASSWORD=your_pw
 ENV MYSQL_DATABASE='nextcloud'
 ENV DB_HOST='db'
 

@@ -3,7 +3,7 @@ import time
 from json import dumps
 
 import requests
-from flask import request
+from flask import request, Response
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from flask_restful import Resource
 from requests.models import HTTPBasicAuth
@@ -86,7 +86,7 @@ class DatatypeResource(Resource):
         'is_large': fields.Bool()
     }
 
-    @use_args(get_args, location='form')
+    @use_args(get_args, location='json')
     @jwt_required()
     def get(self, get_args):
         statement = select(Datatype)
@@ -114,7 +114,7 @@ class DatatypeResource(Resource):
         'is_large': fields.Bool(required=True)
     }
 
-    @use_args(post_args, location='form')
+    @use_args(post_args, location='json')
     @jwt_required()
     def post(self, post_args):
         datatype = Datatype()
@@ -141,7 +141,7 @@ class DatatypeResource(Resource):
         'is_large': fields.Bool()
     }
 
-    @use_args(patch_args, location='form')
+    @use_args(patch_args, location='json')
     @jwt_required()
     def patch(self, patch_args):
         id = patch_args.pop('datatype_id')
@@ -175,12 +175,10 @@ class DeviceResource(Resource):
         'uid': fields.Str()
     }
 
-    @use_args(get_args, location='form')
+    @use_args(get_args, location='json')
     @jwt_required()
     def get(self, get_args):
         statement = select(Device)
-        # Filter by each parameter given in args
-        # Equivalent to WHERE ... AND clauses
         for column_name in get_args:
             if 'name' in column_name:
                 statement = statement.filter(
@@ -203,7 +201,7 @@ class DeviceResource(Resource):
         'location': fields.Str(required=True)
     }
 
-    @use_args(post_args, location='form')
+    @use_args(post_args, location='json')
     @jwt_required()
     def post(self, post_args):
         uid = get_jwt_identity()
@@ -233,7 +231,7 @@ class DeviceResource(Resource):
         'location': fields.Str()
     }
 
-    @use_args(patch_args, location='form')
+    @use_args(patch_args, location='json')
     @jwt_required()
     def patch(self, patch_args):
         id = patch_args.pop('device_id')
@@ -265,7 +263,7 @@ class DeviceResource(Resource):
         'device_id': fields.Int(required=True)
     }
 
-    @use_args(del_args, location='form')
+    @use_args(del_args, location='json')
     @jwt_required()
     def delete(self, del_args):
         id = del_args['device_id']
@@ -305,13 +303,14 @@ class SensorResource(Resource):
         'is_enabled': fields.Bool(),
         'datatype_id': fields.Int(),
         'device_id': fields.Int(),
+        'location': fields.Str(),
         'datatype_name': fields.Str(),
         'is_large': fields.Bool(),
         'uid': fields.Str(),
         'device_name': fields.Str()
     }
 
-    @use_args(get_args, location='form')
+    @use_args(get_args, location='json')
     @jwt_required()
     def get(self, get_args):
         statement = select(
@@ -323,6 +322,7 @@ class SensorResource(Resource):
             Sensor.device_id,
             Device.device_name,
             Device.uid,
+            Device.location,
             Datatype.datatype_name,
             Datatype.is_large
         ).join(Datatype).join(Device)
@@ -341,7 +341,10 @@ class SensorResource(Resource):
         if 'device_name' in get_args:
             statement = statement.filter(
                 Device.device_name.contains(get_args.pop('device_name')))
-        
+        if 'location' in get_args:
+            statement = statement.filter(
+                Device.location.contains(get_args.pop('location')))
+
         # Filter by each parameter given in args
         # Equivalent to WHERE ... AND clauses
         for column_name in get_args:
@@ -369,7 +372,7 @@ class SensorResource(Resource):
         'device_id': fields.Int(required=True)
     }
 
-    @use_args(post_args, location='form')
+    @use_args(post_args, location='json')
     @jwt_required()
     def post(self, post_args):
         uid = get_jwt_identity()
@@ -409,7 +412,7 @@ class SensorResource(Resource):
         'device_id': fields.Int()
     }
 
-    @use_args(patch_args, location='form')
+    @use_args(patch_args, location='json')
     @jwt_required()
     def patch(self, patch_args):
         uid = get_jwt_identity()
@@ -427,6 +430,12 @@ class SensorResource(Resource):
         sensor = Sensor.query.filter_by(sensor_id=id).first()
         if not sensor:
             return{"msg": resp_msg['NO_ITEM']}, 404
+        
+        master_device = Device.query.filter_by(
+            device_id=sensor.device_id).first()
+        if master_device.uid != uid:
+            return {"msg": resp_msg["NO_PERMISSION"]}, 403
+        
         for column_name in patch_args:
             setattr(sensor, column_name, patch_args[column_name])
 
@@ -447,7 +456,7 @@ class SensorResource(Resource):
         'sensor_id': fields.Int(required=True)
     }
 
-    @use_args(del_args, location='form')
+    @use_args(del_args, location='json')
     @jwt_required()
     def delete(self, del_args):
         uid = get_jwt_identity()
@@ -481,16 +490,20 @@ class FileDetailResource(Resource):
         'file_id': fields.Int(),
         'tag_id': fields.Int(),
         'tag_name': fields.Str(),
+        'datatype_id': fields.Int(),
+        'device_id': fields.Int(),
         'sensor_id': fields.Int(),
+        'topic': fields.Str(),
         'start_date': fields.DateTime(format='%Y-%m-%dT%H:%M:%S'),
         'end_date': fields.DateTime(format='%Y-%m-%dT%H:%M:%S')
     }
 
-    @use_args(get_args, location='form')
+    @use_args(get_args, location='json')
     @jwt_required()
     def get(self, get_args):
         statement = select(
             File.file_id,
+            File.file_name,
             File.path,
             Sensor.sensor_id,
             Sensor.sensor_name,
@@ -517,12 +530,16 @@ class FileDetailResource(Resource):
             statement = statement.filter(
                 SensorFile.upload_date < get_args['end_date'])
         
+        statement = statement.order_by(SensorFile.upload_date.desc())
         rows = db.session.execute(statement).all()
 
         if not rows:
             return {"msg": resp_msg['NO_ITEM']}, 404
         
-        return dumps([row._asdict() for row in rows], default=json_serial)
+        return Response(
+            dumps([row._asdict() for row in rows], default=json_serial),
+            mimetype='application/json'
+        )
 
 
     put_args = {
@@ -531,7 +548,7 @@ class FileDetailResource(Resource):
         'sensor_id': fields.Int()
     }
 
-    @use_args(put_args, location='form')
+    @use_args(put_args, location='json')
     @jwt_required()
     def put(self, put_args):
         # Find file
@@ -576,7 +593,7 @@ class FileDetailResource(Resource):
         'tag_id': fields.Int(required=True)
     }
 
-    @use_args(del_args, location='form')
+    @use_args(del_args, location='json')
     @jwt_required()
     def delete(self, del_args):
         # Find file
@@ -615,7 +632,7 @@ class TagResource(Resource):
         'tag_name': fields.Str()
     }
 
-    @use_args(get_args, location='form')
+    @use_args(get_args, location='json')
     @jwt_required()
     def get(self, get_args):
         statement = select(
@@ -643,7 +660,7 @@ class TagResource(Resource):
         'tag_name': fields.Str(required=True)
     }
 
-    @use_args(post_args, location='form')
+    @use_args(post_args, location='json')
     @jwt_required()
     def post(self, post_args):
         tag = Tag(tag_name=post_args['tag_name'])
